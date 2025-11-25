@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <title>認証機能付きWeb掲示板</title>
+    <meta name="description" content="Googleアカウントでログインしないと書き込めなくなっています">
+    <link rel="icon" href="./favicon.png">
+    <link rel="apple-touch-icon" type="image/png" sizes="57x57" href="./favicon_57.png">
+    <link rel="apple-touch-icon" type="image/png" sizes="72x72" href="./favicon_72.png">
+    <link rel="apple-touch-icon" type="image/png" sizes="76x76" href="./favicon_76.png">
+    <link rel="apple-touch-icon" type="image/png" sizes="114x114" href="./favicon_114.png">
+    <link rel="apple-touch-icon" type="image/png" sizes="120x120" href="./favicon_120.png">
+    <link rel="apple-touch-icon" type="image/png" sizes="144x144" href="./favicon_144.png">
+    <link rel="apple-touch-icon" type="image/png" sizes="152x152" href="./favicon_152.png">
+    <link rel="apple-touch-icon" type="image/png" sizes="180x180" href="./favicon_180.png">
+    <link rel="canonical" href="https://van-rj.github.io/BBS/">
+    <link href="https://van-rj.github.io/BBS/index.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.5.16/dist/vue.js"></script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-analytics.js";
+        import { getDatabase, ref, set, onValue, push } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-database.js";
+        import { getAuth, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyB-06H6hZXbmW82UIx0ECRJxuOIkSYCA9s",
+            authDomain: "bbs-kakiuchit-252a0.firebaseapp.com",
+            databaseURL: "https://bbs-kakiuchit-252a0-default-rtdb.asia-southeast1.firebasedatabase.app/",
+            projectId: "bbs-kakiuchit-252a0",
+            storageBucket: "bbs-kakiuchit-252a0.firebasestorage.app",
+            messagingSenderId: "411659535160",
+            appId: "1:411659535160:web:40e3de4a50a996d98337cd",
+            measurementId: "G-RXK34BDNSM"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const database = getDatabase(app);
+        const analytics = getAnalytics(app);
+        const auth = getAuth(app);
+
+        Vue.component('board-list', {
+            template: '<li class="board-list"><div class="board-list__upper"><div style="font-size: 0.75rem;">名前:{{name}}{{date}}</div></div><div style="font-size: 1.25rem;">{{message}}</div></li>',
+            props: ['name', 'message', 'date', 'id'],
+        })
+
+        Vue.component('board-form', {
+            template: '<div class="form-area">名前 : <input v-model="name"> <br><p class="help is-danger is-size-6" v-if="seen">※名前が入力されていません</p> </br>コメント: \
+    <textarea v-model="message"></textarea> </br><button class="button is-link" v-on:click="doAdd">書き込む</button></div>',
+            data: function () {
+                return {
+                    message: '',
+                    name: '',
+                    seen: true
+                }
+            },
+            watch: {
+                name(newVal) {
+                    this.seen = newVal.trim() === '';
+                }
+            },
+
+            methods: {
+                doAdd: function () {
+                    console.log('doAdd called:', this.name, this.message)
+                    this.$emit('input', this.name, this.message)
+                    this.message = ''
+                }
+            }
+        })
+
+        var board = new Vue({
+            el: '#board',
+            data: {
+                lists: [],
+                user: null,
+                authResolved: false
+            },
+            created: function () {
+                var vue = this;
+
+                onAuthStateChanged(auth, async (user) => {
+                    console.log('Auth state changed:', user);
+                    vue.authResolved = true;
+                    console.log('authResolved;', vue.authResolved);
+
+                    if (user) {
+                        console.log('User logged in:', user.email);
+                        
+                        const allowedEmails = ['ugokutenpdayo@gmail.com', 'futo9999999@gmail.com', 'kakiuchi.web@gmail.com', 'm.ueda168@gmail.com'];
+                        if (!allowedEmails.includes(user.email)) {
+                            alert('許可されていないユーザーです。');
+                            signOut(auth);
+                            vue.user = null;
+                            return;
+                        }
+
+                        vue.$set(vue, 'user', user);
+                        console.log('User data set:', vue.user);
+
+                        const starCountRef = ref(database, 'board');
+
+                        onValue(starCountRef, (snapshot) => {
+                            vue.$set(vue, 'lists', snapshot.val() || []);
+                        }, (error) => {
+                            alert("データ取得エラー: " + error.message);
+                        });
+                    } else {
+                        vue.$set(vue, 'user', null);
+                        console.log('User loggedd out');
+                    }
+                })
+            },
+            methods: {
+                doAdd: function (name, message) {
+                    console.log('parent doAdd called with:', name, message)
+                    var now = new Date();
+                    push(ref(database, 'board'), {
+                        name: name,
+                        message: message,
+                        date: now.getMonth() + 1 + '月' + now.getDate() + '日' + now.getHours() + '時' + now.getMinutes() + '分'
+                    })
+                    .then(() => console.log('push succeeded'))
+                    .catch(err => console.error('push failed:', err));
+                },
+
+                signInWithGoogle: function () {
+                    const provider = new GoogleAuthProvider();
+                    signInWithPopup(auth, provider)
+                        .then((result) => {
+                            console.log("Logged in with Google:", result.user);
+                        })
+                        .catch((error) => {
+                            console.error("Google login error:", error);
+                        })
+                }
+                
+            }
+        })
+    </script>
+</head>
+<body>
+    <div id="board">
+        <p v-if="!authResolved" class="has-text-grey">認証確認中...</p>
+        <div>
+            <button @click="signInWithGoogle" class="button is-primary">Googleでログイン</button>
+        </div>
+        <div v-if="authResolved && user">
+            <p>ログイン中: {{ user.email }}</p>
+            <p>ユーザー名: {{ user.displayName }}</p>
+            <section class="hero is-info" style="margin: 0; padding: 0;">
+                <div id="board" class="hero-body is-small" style="padding: 1rem;">
+                  <h3 class="is-size-2" style="font-weight: bold;">お知らせ</h3>
+                  <p class="is-size-4">・XSSできないから画像直接貼れないよ</p>
+                </div>
+            </section>
+            <div>
+                <h1 class="board-title is-size-4 has-text-weight-bold">垣内先生とのチャット用サーバ</h1>
+                <ul class="lists" style="list-style-type: none">
+                    <board-list v-for="(list, key) in lists" :key="key" :name="list.name" :message="list.message" :date="list.date"></board-list>
+                </ul>
+                <board-form v-on:input="doAdd"></board-form>
+            </div>
+        </div>
+    </div>
+    <script src="index.js"></script>
+</body>
+</html>
